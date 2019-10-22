@@ -19,12 +19,13 @@ class NNLM(nn.Module):
     P(T): hidden state is zero vector.
     '''
     
-    def __init__(self, vocab_size, hidden=768):
+    def __init__(self, vocab_size, nh=1000, hidden=768):
         super(NNLM, self).__init__()
         
-        self.e = nn.Embedding(vocab_size, hidden)
-        self.m = nn.GRU(hidden, hidden)
-        self.l = nn.Linear(hidden, vocab_size)
+        self.e = nn.Embedding(vocab_size, nh)
+        self.m = nn.GRU(nh, nh)
+        self.l = nn.Linear(nh, vocab_size)
+        self.trans_h = nn.Linear(hidden, nh)
         
         self.init_weight()
             
@@ -36,13 +37,16 @@ class NNLM(nn.Module):
         self.m.bias_hh_l0.data.fill_(0.0)
         
     def forward(self, inpt, lengths, hidden=None):
-        # inpt: [seq, batch]
+        # inpt: [seq, batch], lengths: [batch], hidden: [1, batch, hidden]
         inpt = self.e(inpt)    # [seq, batch, hidden]
+        
+        if hidden is not None:
+            hidden = self.trans_h(hidden)    # [1, batch, nh]
         
         embedded = nn.utils.rnn.pack_padded_sequence(inpt, lengths, enforce_sorted=False)
         output, _ = self.m(embedded, hidden)
         output, _ = nn.utils.rnn.pad_packed_sequence(output)    # [seq, batch, hidden]
         
         # [seq, batch, vocab_size]
-        return F.log_softmax(self.l(output), dim=1)
+        return self.l(output)
         

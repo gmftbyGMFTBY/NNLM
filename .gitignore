@@ -111,6 +111,7 @@ venv.bak/
 *.pt
 *.pyc
 *.bin
+*.json
 .ipynb_checkpoints
 tblogs
 *pretrained

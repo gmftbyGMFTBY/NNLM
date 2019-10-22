@@ -7,7 +7,10 @@ import torch
 import numpy as np
 import math
 import pickle
+import random
 import ipdb
+import argparse
+from tqdm import tqdm
 
 
 def load_pickle(path):
@@ -15,10 +18,10 @@ def load_pickle(path):
         return pickle.load(f)
 
     
-def tgt_vocab_content(path, maxsize=25000):
+def tgt_vocab(path, savepath, maxsize=25000):
     words, corpus = {}, []
     with open(path) as f:
-        for line in f.readlines():
+        for line in tqdm(f.readlines()):
             line = line.strip()
             ws = line.split()
             corpus.append(ws)
@@ -27,18 +30,39 @@ def tgt_vocab_content(path, maxsize=25000):
                     words[w] += 1
                 else:
                     words[w] = 1
+    print(f'[!] raw vocab size: {len(words)}')
     words = sorted(words.items(), key=lambda x: x[1], reverse=True)[:maxsize]
     words = [i for i, j in words]
     words.extend(['<sos>', '<eos>', '<unk>', '<pad>'])
     w2idx, idx2w = {i:idx for idx, i in enumerate(words)}, words
     
+    with open(savepath, 'wb') as f:
+        pickle.dump([w2idx, idx2w], f)
+    print(f'vocab file save into {savepath}, vocab size: {len(w2idx)}')
+
+
+def tgt_content(vocabp, path, savepath, maxsize=1000000):
+    # vocab
+    w2idx, idx2w = load_pickle(vocabp)
+    
+    with open(path) as f:
+        corpus = []
+        for line in tqdm(f.readlines()):
+            line = line.strip()
+            ws = line.split()
+            corpus.append(ws)
+            
+    corpus = random.sample(corpus, maxsize)
+    
     # process the dataset
     dataset = []
-    for line in corpus:
+    for line in tqdm(corpus):
         line = [w2idx['<sos>']] + [w2idx[i] if w2idx.get(i, None) else w2idx['<unk>'] for i in line] + [w2idx['<eos>']]
         dataset.append(line)
-    
-    return w2idx, idx2w, dataset
+        
+    with open(savepath, 'wb') as f:
+        pickle.dump(dataset, f)
+    print(f'[!] dataset file save into {savepath}, dataset size: {len(dataset)}')
 
 
 def pad_sequence(pad, batch, bs):
@@ -46,17 +70,11 @@ def pad_sequence(pad, batch, bs):
     for i in range(bs):
         batch[i].extend([pad] * (maxlen - len(batch[i])))
     
-
-def get_batch(spath, tpath, batch_size, w2idx, idx2w, dataset):
-    # spath: pickle file, tpath: text file
-    src = load_pickle(spath)
     
-    assert len(src) == len(dataset)
-    
+def get_batch(batch_size, w2idx, idx2w, dataset, max_len=50):
     turns = [len(i) for i in dataset]
     turnidx = np.argsort(turns)
     dataset = [dataset[idx] for idx in turnidx]
-    src = np.stack([src[idx] for idx in turnidx])
     
     # P(T)
     fidx, bidx = 0, 0
@@ -65,8 +83,10 @@ def get_batch(spath, tpath, batch_size, w2idx, idx2w, dataset):
         rbatch = dataset[fidx:bidx]    # [batch, lengths]
         
         lengths, batch = [], []
-        maxlen = max([len(i) for i in rbatch])
+        maxlen = min(max_len, max([len(i) for i in rbatch]))
         for i in rbatch:
+            if len(i) > maxlen:
+                i = i[:maxlen-1] + [w2idx['<eos>']]
             lengths.append(len(i))
             batch.append(i + [w2idx['<pad>']] * (maxlen - len(i)))
             
@@ -76,9 +96,24 @@ def get_batch(spath, tpath, batch_size, w2idx, idx2w, dataset):
         
         fidx = bidx
         
+        if lengths[0] == 3:
+            continue
+        
         # batch: [seq, batch], lengths: [batch]
         yield w2idx, idx2w, batch, lengths, None
     
+
+def get_batch_pair(spath, batch_size, w2idx, idx2w, dataset, max_len=50):
+    # spath: pickle file, tpath: text file
+    # fine-tuning with the small dataset, lower learning rate (1e-7)
+    src = load_pickle(spath)
+    
+    assert len(src) == len(dataset)
+    
+    turns = [len(i) for i in dataset]
+    turnidx = np.argsort(turns)
+    dataset = [dataset[idx] for idx in turnidx]
+    src = np.stack([src[idx] for idx in turnidx])
     
     # P(T|S)
     fidx, bidx = 0, 0
@@ -88,8 +123,10 @@ def get_batch(spath, tpath, batch_size, w2idx, idx2w, dataset):
         sbatch = src[fidx:bidx]    # [batch, 768]
         
         lengths, batch = [], []
-        maxlen = max([len(i) for i in rbatch])
+        maxlen = min(max_len, max([len(i) for i in rbatch]))
         for i in rbatch:
+            if len(i) > maxlen:
+                i = i[:maxlen-1] + [w2idx['<eos>']]
             lengths.append(len(i))
             batch.append(i + [w2idx['<pad>']] * (maxlen - len(i)))
             
@@ -100,10 +137,22 @@ def get_batch(spath, tpath, batch_size, w2idx, idx2w, dataset):
         
         fidx = bidx
         
+        if lengths[0] == 3:
+            continue
+        
         # batch: [seq, batch], lengths: [batch], sbatch: [batch, 768]
         yield w2idx, idx2w, batch, lengths, sbatch
     
 
 
 if __name__ == "__main__":
-    pass
+    parser = argparse.ArgumentParser(description='utils function')
+    parser.add_argument('--file', type=str, default='./data/pretrained/corpus.txt')
+    parser.add_argument('--vocabp', type=str, default='./data/vocab.pkl')
+    parser.add_argument('--datap', type=str, default='./data/pretrained/data.pkl')
+    parser.add_argument('--maxsize', type=int, default=50000)
+    
+    args = parser.parse_args()
+    
+    tgt_vocab(args.file, args.vocabp, args.maxsize)
+    tgt_content(args.vocabp, args.file, args.datap)

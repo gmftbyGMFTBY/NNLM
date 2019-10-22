@@ -14,7 +14,7 @@ import argparse
 import math, os
 import pickle
 from tqdm import tqdm
-import pickle
+import ipdb
 
 from NNLM import NNLM
 from data_loader import *
@@ -27,14 +27,15 @@ def train(net, train_iter, optimizer, criterion, grad_clip):
     pbar = tqdm(train_iter)
     
     for idx, batch in enumerate(pbar):
-        w2idx, idx2s, batch, lengths, sbatch = batch
+        w2idx, idx2w, batch, lengths, sbatch = batch
         vocab_size = len(w2idx)
         
         optimizer.zero_grad()
         # batch: [seq, batch], output: [seq, batch, vocab_size]
         output = net(batch, lengths, hidden=sbatch)
-        loss = criterion(output[1:].view(-1, vocab_size),
-                         batch[1:].contiguous().view(-1))
+        # ignore the <eos>
+        loss = criterion(output[:-2].view(-1, vocab_size),
+                         batch[1:-1].contiguous().view(-1))
         
         loss.backward()
         clip_grad_norm_(net.parameters(), grad_clip)
@@ -43,14 +44,17 @@ def train(net, train_iter, optimizer, criterion, grad_clip):
         total_loss += loss.item()
         batch_num += 1
         
+        pbar.set_description(f'training loss: {round(loss.item(), 4)}, max_seqlen: {batch.size(0)}')
+    
+    pbar.close()
+        
     return round(total_loss / batch_num, 4)
 
 
-def main(spath, tpath, batch_size, epoch, lr=1e-3, grad_clip=5):
+def main(vocabp, datapath, batch_size, epoch, lr=1e-3, grad_clip=5):
     # init the vocab
-    w2idx, idx2w, dataset = tgt_vocab_content(tpath, maxsize=25000)
-    with open('vocab.pkl', 'wb') as f:
-        pickle.dump([w2idx, idx2w], f)
+    w2idx, idx2w = load_pickle(vocabp)
+    dataset = load_pickle(datapath)
     
     # init the model
     net = NNLM(len(w2idx))
@@ -59,17 +63,17 @@ def main(spath, tpath, batch_size, epoch, lr=1e-3, grad_clip=5):
     print(net)
     
     # init the criterion and optimizer
-    criterion = nn.NLLLoss(ignore_index=w2idx['<pad>'])
+    criterion = nn.CrossEntropyLoss(ignore_index=w2idx['<pad>'])
     optimizer = optim.Adam(net.parameters(), lr=lr)
     
     pbar = tqdm(range(1, epoch + 1))
     best_loss = None
     for epoch in pbar:
         # load the dataset
-        train_iter = get_batch(spath, tpath, batch_size, w2idx, idx2w, dataset)
+        train_iter = get_batch(batch_size, w2idx, idx2w, dataset)
         loss = train(net, train_iter, optimizer, criterion, grad_clip)
         
-        if not best_loss or loss < best_loss:
+        if best_loss is None or loss < best_loss:
             best_loss = loss
             patience = 0
         else:
@@ -100,11 +104,10 @@ if __name__ == "__main__":
     parser.add_argument('--grad_clip', type=float, default=5)
     parser.add_argument('--patience', type=int, default=10)
     
-    
     args = parser.parse_args()
     
-    spath = f'../data/{args.dataset}/src-train.embed'
-    tpath = f'../data/{args.dataset}/tgt-train.txt'
+    vocabpath = f'./data/vocab.pkl'
+    datapath = f'./data/{args.dataset}/data.pkl'
     
-    main(spath, tpath, args.batch_size, args.epoch, 
+    main(vocabpath, datapath, args.batch_size, args.epoch, 
          lr=args.lr, grad_clip=args.grad_clip)
