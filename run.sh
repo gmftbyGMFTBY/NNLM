@@ -25,6 +25,26 @@ elif [ $mode = 'train' ]; then
         --batch-size 128 \
         --patience 5 \
         --epoch 20
+        
+elif [ $mode = 'pretrained' ]; then
+    rm ./ckpt/$dataset/*
+    
+    echo "[!] process the dataset $dataset"
+    python data_loader.py \
+        --file ./data/$dataset/corpus.txt \
+        --vocabp none \
+        --datap ./data/$dataset/data.pkl \
+        --maxsize 50000
+        
+    echo "[!] clear the checkpoints and begin to load and train the model"
+    CUDA_VISIBLE_DEVICES="$CUDA" python train.py \
+        --dataset $dataset \
+        --lr 1e-5 \
+        --grad_clip 5 \
+        --batch-size 128 \
+        --patience 5 \
+        --epoch 20 \
+        --mode pretrained 
 
 else
     echo "[!] $mode is invalid, train/test mode is valid"

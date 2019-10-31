@@ -11,6 +11,26 @@ import random
 import ipdb
 import argparse
 from tqdm import tqdm
+import os
+
+def load_best_model(dataset, net, min_threshold, max_threshold):
+    path = f'./ckpt/{dataset}/'
+    best_loss, best_file, best_epoch = np.inf, None, -1
+
+    for file in os.listdir(path):
+        _, epoch = file.split('_')
+        epoch = int(epoch.split('.')[0])
+
+        if min_threshold <= epoch <= max_threshold and epoch > best_epoch:
+            best_file = file
+            best_epoch = epoch
+
+    if best_file:
+        file_path = path + best_file
+        print(f'[!] Load the model from {file_path}, threshold ({min_threshold}, {max_threshold})')
+        net.load_state_dict(torch.load(file_path)['net'])
+    else:
+        raise Exception(f'[!] No saved model of {dataset}')
 
 
 def load_pickle(path):
@@ -23,7 +43,9 @@ def tgt_vocab(path, savepath, maxsize=25000):
     with open(path) as f:
         for line in tqdm(f.readlines()):
             line = line.strip()
-            ws = line.split()
+            if not line:
+                continue
+            ws = list(line)
             corpus.append(ws)
             for w in ws:
                 if words.get(w, None):
@@ -48,10 +70,12 @@ def tgt_content(vocabp, path, savepath, maxsize=1000000):
     with open(path) as f:
         corpus = []
         for line in tqdm(f.readlines()):
-            line = line.strip()
-            ws = line.split()
-            corpus.append(ws)
+            line = ''.join(line.strip().split())
+            if line:
+                ws = list(line)
+                corpus.append(ws)
             
+    maxsize = min(maxsize, len(corpus))
     corpus = random.sample(corpus, maxsize)
     
     # process the dataset
@@ -154,5 +178,6 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    tgt_vocab(args.file, args.vocabp, args.maxsize)
-    tgt_content(args.vocabp, args.file, args.datap)
+    if args.vocabp != 'none':
+        tgt_vocab(args.file, args.vocabp, args.maxsize)
+    tgt_content('./data/vocab.pkl', args.file, args.datap)

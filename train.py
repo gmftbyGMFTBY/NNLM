@@ -51,7 +51,7 @@ def train(net, train_iter, optimizer, criterion, grad_clip):
     return round(total_loss / batch_num, 4)
 
 
-def main(vocabp, datapath, batch_size, epoch, lr=1e-3, grad_clip=5):
+def main(vocabp, datapath, batch_size, epoch, lr=1e-3, grad_clip=5, mode='train'):
     # init the vocab
     w2idx, idx2w = load_pickle(vocabp)
     dataset = load_pickle(datapath)
@@ -61,6 +61,10 @@ def main(vocabp, datapath, batch_size, epoch, lr=1e-3, grad_clip=5):
     net.cuda()
     print(f'[!] net:')
     print(net)
+    
+    if mode == 'pretrained':
+        print('[!] load pretrained weighted')
+        load_best_model('pretrained', net, 0, 20)
     
     # init the criterion and optimizer
     criterion = nn.CrossEntropyLoss(ignore_index=w2idx['<pad>'])
@@ -103,6 +107,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--grad_clip', type=float, default=5)
     parser.add_argument('--patience', type=int, default=10)
+    parser.add_argument('--mode', type=str, default='train')
     
     args = parser.parse_args()
     
@@ -110,4 +115,4 @@ if __name__ == "__main__":
     datapath = f'./data/{args.dataset}/data.pkl'
     
     main(vocabpath, datapath, args.batch_size, args.epoch, 
-         lr=args.lr, grad_clip=args.grad_clip)
+         lr=args.lr, grad_clip=args.grad_clip, mode=args.mode)

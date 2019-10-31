@@ -27,15 +27,6 @@ class NNLM(nn.Module):
         self.l = nn.Linear(nh, vocab_size)
         self.trans_h = nn.Linear(hidden, nh)
         
-        self.init_weight()
-            
-    def init_weight(self):
-        # orthogonal init
-        init.orthogonal_(self.m.weight_hh_l0)
-        init.orthogonal_(self.m.weight_ih_l0)
-        self.m.bias_ih_l0.data.fill_(0.0)
-        self.m.bias_hh_l0.data.fill_(0.0)
-        
     def forward(self, inpt, lengths, hidden=None):
         # inpt: [seq, batch], lengths: [batch], hidden: [1, batch, hidden]
         inpt = self.e(inpt)    # [seq, batch, hidden]
